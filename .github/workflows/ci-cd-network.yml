@@ -2,12 +2,12 @@ name: 🚀 AWS Network Infrastructure CI/CD Pipeline
 
 on:
   push:
-    branches: [ 'main' ]
+    branches: [ 'main', 'homolog', 'dev', 'develop' ]
     paths:
       - 'infra/**'
       - '.github/workflows/ci-cd-network.yml'
   pull_request:
-    branches: [ 'main' ]
+    branches: [ 'main', 'homolog', 'dev', 'develop' ]
     paths:
       - 'infra/**'
       - '.github/workflows/ci-cd-network.yml'
@@ -41,12 +41,28 @@ jobs:
       !contains(github.event.pull_request.title, '[skip ci]') &&
       !contains(github.event.pull_request.title, '[ci skip]')
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'prd' }}
+    environment: >-
+      ${{ 
+        github.event.inputs.environment || 
+        (github.base_ref == 'main' && 'prd') || 
+        (github.ref == 'refs/heads/main' && 'prd') || 
+        (github.base_ref == 'homolog' && 'hml') || 
+        (github.ref == 'refs/heads/homolog' && 'hml') || 
+        'dev' 
+      }}
     permissions:
       contents: read
 
     env:
-      ENV: ${{ github.event.inputs.environment || 'prd' }}
+      ENV: >-
+        ${{ 
+          github.event.inputs.environment || 
+          (github.base_ref == 'main' && 'prd') || 
+          (github.ref == 'refs/heads/main' && 'prd') || 
+          (github.base_ref == 'homolog' && 'hml') || 
+          (github.ref == 'refs/heads/homolog' && 'hml') || 
+          'dev' 
+        }}
 
     steps:
       - name: Checkout repository
