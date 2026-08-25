@@ -2,30 +2,26 @@ name: 🚀 AWS Network Infrastructure CI/CD Pipeline
 
 on:
   push:
-    branches: [ 'main', 'homolog', 'develop' ]
+    branches: [ 'main' ]
     paths:
-      - 'dev/**'
-      - 'hml/**'
-      - 'prd/**'
+      - 'infra/**'
       - '.github/workflows/ci-cd-network.yml'
   pull_request:
-    branches: [ 'main', 'homolog', 'develop' ]
+    branches: [ 'main' ]
     paths:
-      - 'dev/**'
-      - 'hml/**'
-      - 'prd/**'
+      - 'infra/**'
       - '.github/workflows/ci-cd-network.yml'
   workflow_dispatch:
     inputs:
       environment:
         description: 'Ambiente de Deploy (prd, dev, hml)'
         required: true
-        default: 'dev'
+        default: 'prd'
         type: choice
         options:
+          - prd
           - dev
           - hml
-          - prd
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,17 +41,12 @@ jobs:
       !contains(github.event.pull_request.title, '[skip ci]') &&
       !contains(github.event.pull_request.title, '[ci skip]')
     runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prd' }}
     permissions:
       contents: read
 
     env:
-      ENV: >-
-        ${{ 
-          github.event.inputs.environment || 
-          (github.ref == 'refs/heads/main' && 'prd') || 
-          (github.ref == 'refs/heads/homolog' && 'hml') || 
-          'dev' 
-        }}
+      ENV: ${{ github.event.inputs.environment || 'prd' }}
 
     steps:
       - name: Checkout repository
@@ -104,16 +95,19 @@ jobs:
 
       - name: Terraform Init
         run: |
-          cd ${{ env.ENV }}
-          terraform init
+          cd infra
+          terraform init \
+            -backend-config="bucket=fiap-repairshop2" \
+            -backend-config="key=network/${ENV}.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}"
 
       - name: Terraform Plan
         run: |
-          cd ${{ env.ENV }}
-          terraform plan
+          cd infra
+          terraform plan -var-file="environments/${ENV}.tfvars"
 
-      - name: Terraform Apply
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/homolog' || github.ref == 'refs/heads/develop'))
+      - name: Terraform Apply (Somente na branch main ou disparo manual)
+        if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
         run: |
-          cd ${{ env.ENV }}
-          terraform apply -auto-approve
+          cd infra
+          terraform apply -auto-approve -var-file="environments/${ENV}.tfvars"

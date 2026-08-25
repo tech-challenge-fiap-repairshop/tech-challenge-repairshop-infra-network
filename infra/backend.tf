@@ -1,7 +1,7 @@
 terraform {
   backend "s3" {
     bucket  = "fiap-repairshop2"
-    key     = "network/hml.tfstate"
+    key     = "network/terraform.tfstate"
     region  = "us-east-1"
     encrypt = true
   }

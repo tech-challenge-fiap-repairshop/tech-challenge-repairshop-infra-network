@@ -4,6 +4,12 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "environment" {
+  description = "Ambiente de deploy (dev, hml, prd)"
+  type        = string
+  default     = "prd"
+}
+
 variable "cluster_name" {
   description = "Nome do Cluster EKS"
   type        = string
@@ -48,4 +54,3 @@ locals {
   # Constrói o ARN da role dinamicamente utilizando a conta atual logada
   lab_role_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/LabRole"
 }
-
