@@ -41,6 +41,7 @@ jobs:
       !contains(github.event.pull_request.title, '[skip ci]') &&
       !contains(github.event.pull_request.title, '[ci skip]')
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: >-
       ${{ 
         github.event.inputs.environment || 
@@ -109,6 +110,11 @@ jobs:
         with:
           terraform_version: "1.8.5"
 
+      - name: Terraform Format Check
+        run: |
+          cd infra
+          terraform fmt -check
+
       - name: Terraform Init
         run: |
           cd infra
@@ -127,3 +133,15 @@ jobs:
         run: |
           cd infra
           terraform apply -auto-approve -var-file="environments/${ENV}.tfvars"
+
+      - name: Generate Pipeline Summary
+        if: always()
+        run: |
+          echo "## 🚀 AWS Network CI/CD Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Parâmetro | Valor |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Ambiente Alvo** | \`${{ env.ENV }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Evento** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Branch / Ref** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Autor** | \`${{ github.actor }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Status da Execução** | \`${{ job.status }}\` |" >> $GITHUB_STEP_SUMMARY
