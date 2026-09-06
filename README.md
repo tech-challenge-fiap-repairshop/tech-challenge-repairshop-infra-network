@@ -26,33 +26,78 @@ A infraestrutura de rede estabelece a fundação de segurança e conectividade p
 
 ```mermaid
 flowchart TB
-    subgraph Internet["🌐 Internet Pública"]
-        IGW["Internet Gateway (IGW)"]
-    end
+    %% Definições de Estilo
+    classDef internetStyle fill:#ECEFF1,stroke:#607D8B,stroke-width:2px,color:#263238
+    classDef vpcStyle fill:#F5F7FA,stroke:#0277BD,stroke-width:2px,color:#01579B,stroke-dasharray: 4 4
+    classDef azStyle fill:#FFFFFF,stroke:#B0BEC5,stroke-width:1px,stroke-dasharray: 2 2,color:#37474F
+    classDef publicSubnetStyle fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef privateSubnetStyle fill:#FFF8E1,stroke:#F57F17,stroke-width:2px,color:#BF360C
+    classDef gwStyle fill:#FF8F00,stroke:#E65100,stroke-width:2px,color:#FFFFFF
+    classDef serviceStyle fill:#EDE7F6,stroke:#512DA8,stroke-width:2px,color:#311B92
+    classDef workloadStyle fill:#E1F5FE,stroke:#0288D1,stroke-width:1px,color:#01579B
 
-    subgraph AWS_VPC["🏢 AWS VPC (10.x.0.0/16)"]
-        subgraph PublicSubnets["🟢 Sub-redes Públicas (Multi-AZ)"]
-            Pub1["Subnet Pública AZ-1a\n(10.x.1.0/24)"]
-            Pub2["Subnet Pública AZ-1b\n(10.x.2.0/24)"]
-            NAT["NAT Gateway (EIP)"]
+    subgraph InternetZone["🌐 Camada Externa / Internet"]
+        IGW["🌐 Internet Gateway (IGW)\n0.0.0.0/0"]
+    end
+    class InternetZone internetStyle
+    class IGW gwStyle
+
+    subgraph AWS_VPC["🏢 AWS VPC — repairshop-vpc (CIDR: 10.x.0.0/16)"]
+        subgraph AZ_1A["📍 Zona de Disponibilidade: us-east-1a"]
+            subgraph Pub1["🟢 Subnet Pública 1 (10.x.0.0/24)\nTag: kubernetes.io/role/elb = 1"]
+                NAT["🔄 NAT Gateway (EIP Alocado)\nus-east-1a"]
+            end
+
+            subgraph Priv1["🔒 Subnet Privada 1 (10.x.2.0/24)\nTag: kubernetes.io/role/internal-elb = 1"]
+                EKS1["☸️ EKS NodeGroup\n(Worker Nodes)"]
+                RDS1["🗄️ RDS PostgreSQL\n(Instância / Réplica)"]
+                LAMBDA1["⚡ Lambda Auth\n(VPC Eni)"]
+            end
         end
 
-        subgraph PrivateSubnets["🔒 Sub-redes Privadas (Multi-AZ)"]
-            Priv1["Subnet Privada AZ-1a\n(10.x.10.0/24)\n• EKS Nodes\n• RDS Postgres\n• Lambda Auth"]
-            Priv2["Subnet Privada AZ-1b\n(10.x.11.0/24)\n• EKS Nodes\n• RDS Postgres\n• Lambda Auth"]
+        subgraph AZ_1B["📍 Zona de Disponibilidade: us-east-1b"]
+            subgraph Pub2["🟢 Subnet Pública 2 (10.x.1.0/24)\nTag: kubernetes.io/role/elb = 1"]
+                PubLB["⚖️ External Ingress / ALB"]
+            end
+
+            subgraph Priv2["🔒 Subnet Privada 2 (10.x.3.0/24)\nTag: kubernetes.io/role/internal-elb = 1"]
+                EKS2["☸️ EKS NodeGroup\n(Worker Nodes)"]
+                RDS2["🗄️ RDS PostgreSQL\n(Instância / Multi-AZ)"]
+                LAMBDA2["⚡ Lambda Auth\n(VPC Eni)"]
+            end
+        end
+
+        %% Tabelas de Roteamento
+        subgraph RoutingTables["🧭 Tabelas de Roteamento (Route Tables)"]
+            PublicRT["Public Route Table\n0.0.0.0/0 ➔ IGW"]
+            PrivateRT["Private Route Table\n0.0.0.0/0 ➔ NAT Gateway"]
         end
     end
+    class AWS_VPC vpcStyle
+    class AZ_1A,AZ_1B azStyle
+    class Pub1,Pub2 publicSubnetStyle
+    class Priv1,Priv2 privateSubnetStyle
+    class NAT gwStyle
+    class EKS1,EKS2,RDS1,RDS2,LAMBDA1,LAMBDA2,PubLB workloadStyle
+    class PublicRT,PrivateRT serviceStyle
 
-    subgraph ECR_S3["📦 Serviços Globais AWS"]
-        ECR["AWS ECR (Container Registry)\nrepairshop-*"]
-        S3State["AWS S3 State Bucket\nfiap-repairshop2/network/*.tfstate"]
+    subgraph GlobalAWS["☁️ Serviços Centrais de Suporte (AWS Management)"]
+        ECR["📦 AWS ECR (Container Registry)\nrepairshop-* (Scan on Push)"]
+        S3Bucket["🪣 AWS S3 Remote State Bucket\nfiap-repairshop2 (SSE-AES256 / Versioned)"]
     end
+    class GlobalAWS serviceStyle
+    class ECR,S3Bucket serviceStyle
 
-    IGW <--> Pub1 & Pub2
-    Pub1 --> NAT
-    Priv1 & Priv2 -.->|"Saída Segura (Outbound)"| NAT
-    NAT --> IGW
-    Priv1 & Priv2 --> ECR
+    %% Fluxos de Tráfego e Conectividade
+    IGW <-->|"Inbound / Outbound"| Pub1 & Pub2
+    Pub1 & Pub2 -.-> PublicRT
+    NAT -->|"Egress Internet Traffic"| IGW
+    
+    Priv1 & Priv2 -.-> PrivateRT
+    PrivateRT -->|"Outbound Seguro via NAT"| NAT
+
+    Priv1 & Priv2 -->|"Download de Imagens"| ECR
+    Priv1 & Priv2 -.->|"State Persistence / CI/CD"| S3Bucket
 ```
 
 ---
@@ -87,15 +132,24 @@ A automação da infraestrutura de rede é orquestrada através do workflow [`.g
 
 ```mermaid
 flowchart TD
-    A["🎯 Trigger (Push/PR branches: main, homolog, dev ou Workflow Dispatch)"] --> B["⚙️ Setup & Auth AWS (Configure AWS Credentials)"]
-    B --> C["📦 S3 State Check (Ensure Bucket fiap-repairshop2)"]
-    C --> D["🔍 Terraform Format Check (terraform fmt -check)"]
-    D --> E["⚡ Terraform Init (S3 Backend: network/${ENV}.tfstate)"]
-    E --> F["📝 Terraform Plan (Validação com environments/${ENV}.tfvars)"]
-    F --> G{"🌿 Branch é main ou Dispatch Manual?"}
-    G -- "Sim" --> H["🚀 Terraform Apply (-auto-approve)"]
-    G -- "Não (PR / Homolog)" --> I["✅ Geração de Relatório de Plano"]
-    H --> J["📊 GitHub Step Summary (Métricas da Execução)"]
+    classDef triggerStyle fill:#E1F5FE,stroke:#0288D1,stroke-width:2px,color:#01579B
+    classDef stepStyle fill:#F3E5F5,stroke:#7B1FA2,stroke-width:2px,color:#4A148C
+    classDef gateStyle fill:#FFF9C4,stroke:#FBC02D,stroke-width:2px,color:#F57F17
+    classDef deployStyle fill:#E8F5E9,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef reportStyle fill:#ECEFF1,stroke:#455A64,stroke-width:2px,color:#263238
+
+    A["🎯 Disparo / Trigger\n• Push ou PR (main, homolog, dev)\n• Workflow Dispatch Manual"]:::triggerStyle
+    A --> B["⚙️ Autenticação AWS\n(Configure AWS Credentials / IAM LabRole)"]:::stepStyle
+    B --> C["📦 Garantia do Bucket S3\n(Verifica/Cria fiap-repairshop2 com SSE-AES256)"]:::stepStyle
+    C --> D["🔍 Checagem de Formatação\n(terraform fmt -check na pasta infra/)"]:::stepStyle
+    D --> E["⚡ Inicialização do Terraform\n(terraform init com backend S3 network/${ENV}.tfstate)"]:::stepStyle
+    E --> F["📝 Geração do Plano\n(terraform plan -var-file=environments/${ENV}.tfvars)"]:::stepStyle
+    F --> G{"🌿 Branch é 'main' com Push\nou Dispatch Manual?"}:::gateStyle
+    
+    G -- "✅ Sim (Deploy Aprovado)" --> H["🚀 Terraform Apply\n(terraform apply -auto-approve)"]:::deployStyle
+    G -- "🛡️ Não (PR ou Homologação)" --> I["📋 Modo Dry-Run / Plan Only\n(Validação de Sintaxe e Mudanças)"]:::reportStyle
+    
+    H --> J["📊 GitHub Step Summary\n(Ambiente, Autor, Commit e Status do Job)"]:::reportStyle
     I --> J
 ```
 
@@ -121,6 +175,33 @@ flowchart TD
 > 1. **Economia de Minutos e Quota da Conta:** Evita o custo temporal e financeiro de provisionar múltiplos runners virtuais no GitHub Actions, economizando a franquia limitada de minutos da conta.
 > 2. **Eliminação de Overhead de Setup:** Reduz o tempo total de execução em mais de 60%, pois não é necessário repetir passos idênticos (download de Terraform, autenticação AWS e checkout de código) em múltiplos jobs sequenciais.
 > 3. **Compartilhamento de Estado Local e Plugins:** Os provedores baixados no `terraform init` permanecem no workspace durante o `plan` e `apply`, eliminando upload/download de artefatos temporários entre jobs.
+
+---
+
+## 🔀 Governança de Branches e Ciclo de Promoção (Git Flow)
+
+A governança do repositório segue isolamento estrito com aprovação controlada para promoção de ambientes:
+
+```mermaid
+flowchart LR
+    classDef branchDev fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px,color:#0D47A1
+    classDef branchHml fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px,color:#E65100
+    classDef branchMain fill:#E8F5E9,stroke:#43A047,stroke-width:2px,color:#1B5E20
+    classDef gateStyle fill:#FFEBEE,stroke:#E53935,stroke-width:2px,color:#B71C1C
+
+    Dev["🌿 Feature / Fix / Chore\n(feat/*, fix/*, chore/*)"]:::branchDev
+    PR_HML{"Pull Request\npara homolog"}:::gateStyle
+    HML["🛡️ Branch homolog\n(Ambiente hml / Validação)"]:::branchHml
+    PR_MAIN{"Pull Request\npara main"}:::gateStyle
+    Main["🚀 Branch main\n(Deploy em Produção)"]:::branchMain
+
+    Dev -->|"Abertura de PR"| PR_HML
+    PR_HML -->|"Validação & Merge"| HML
+    HML -->|"Abertura de PR de Promoção"| PR_MAIN
+    PR_MAIN -->|"Aprovação Manual Obrigatória"| Main
+```
+
+> ⚠️ **Regra de Governança:** É expressamente proibido commit ou push direto na branch `main`. Toda alteração deve passar pelo pipeline de validação e aprovação formal.
 
 ---
 
