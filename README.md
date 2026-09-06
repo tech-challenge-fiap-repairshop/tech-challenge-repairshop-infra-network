@@ -35,6 +35,8 @@ flowchart TB
     classDef gwStyle fill:#FF8F00,stroke:#E65100,stroke-width:2px,color:#FFFFFF
     classDef serviceStyle fill:#EDE7F6,stroke:#512DA8,stroke-width:2px,color:#311B92
     classDef workloadStyle fill:#E1F5FE,stroke:#0288D1,stroke-width:1px,color:#01579B
+    classDef pubTagStyle fill:#FFFFFF,stroke:#4CAF50,stroke-width:1px,stroke-dasharray: 2 2,color:#2E7D32
+    classDef privTagStyle fill:#FFFFFF,stroke:#FFA000,stroke-width:1px,stroke-dasharray: 2 2,color:#E65100
 
     subgraph InternetZone["🌐 Camada Externa / Internet"]
         IGW["🌐 Internet Gateway (IGW)\n0.0.0.0/0"]
@@ -44,26 +46,34 @@ flowchart TB
 
     subgraph AWS_VPC["🏢 AWS VPC — repairshop-vpc (CIDR: 10.x.0.0/16)"]
         subgraph AZ_1A["📍 Zona de Disponibilidade: us-east-1a"]
-            subgraph Pub1["🟢 Subnet Pública 1 (10.x.0.0/24)\nTag: kubernetes.io/role/elb = 1"]
+            subgraph Pub1["🟢 Subnet Pública 1 (10.x.0.0/24)"]
+                TagPub1["🏷️ kubernetes.io/role/elb = 1"]:::pubTagStyle
                 NAT["🔄 NAT Gateway (EIP Alocado)\nus-east-1a"]
+                TagPub1 ~~~ NAT
             end
 
-            subgraph Priv1["🔒 Subnet Privada 1 (10.x.2.0/24)\nTag: kubernetes.io/role/internal-elb = 1"]
+            subgraph Priv1["🔒 Subnet Privada 1 (10.x.2.0/24)"]
+                TagPriv1["🏷️ kubernetes.io/role/internal-elb = 1"]:::privTagStyle
                 EKS1["☸️ EKS NodeGroup\n(Worker Nodes)"]
                 RDS1["🗄️ RDS PostgreSQL\n(Instância / Réplica)"]
                 LAMBDA1["⚡ Lambda Auth\n(VPC Eni)"]
+                TagPriv1 ~~~ EKS1
             end
         end
 
         subgraph AZ_1B["📍 Zona de Disponibilidade: us-east-1b"]
-            subgraph Pub2["🟢 Subnet Pública 2 (10.x.1.0/24)\nTag: kubernetes.io/role/elb = 1"]
+            subgraph Pub2["🟢 Subnet Pública 2 (10.x.1.0/24)"]
+                TagPub2["🏷️ kubernetes.io/role/elb = 1"]:::pubTagStyle
                 PubLB["⚖️ External Ingress / ALB"]
+                TagPub2 ~~~ PubLB
             end
 
-            subgraph Priv2["🔒 Subnet Privada 2 (10.x.3.0/24)\nTag: kubernetes.io/role/internal-elb = 1"]
+            subgraph Priv2["🔒 Subnet Privada 2 (10.x.3.0/24)"]
+                TagPriv2["🏷️ kubernetes.io/role/internal-elb = 1"]:::privTagStyle
                 EKS2["☸️ EKS NodeGroup\n(Worker Nodes)"]
                 RDS2["🗄️ RDS PostgreSQL\n(Instância / Multi-AZ)"]
                 LAMBDA2["⚡ Lambda Auth\n(VPC Eni)"]
+                TagPriv2 ~~~ EKS2
             end
         end
 
