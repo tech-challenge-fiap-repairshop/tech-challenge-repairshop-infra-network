@@ -18,7 +18,7 @@ A infraestrutura de rede estabelece a fundação de segurança e conectividade p
   - **Sub-redes Públicas (2 AZs):** Destinadas exclusivamente ao Internet Gateway (IGW) e NAT Gateway com Elastic IP (EIP).
   - **Sub-redes Privadas (2 AZs):** Hospedagem segura de workloads (Cluster EKS, Banco RDS PostgreSQL e Lambda Functions) sem exposição pública de IP.
 - **Registro Central de Imagens (AWS ECR):** Provisionamento do repositório privado `repairshop-${cluster_name}` com criptografia AES256 e políticas de ciclo de vida de imagens Docker.
-- **State Backend Centralizado (S3):** Gerenciamento e garantia de existência do bucket `fiap-repairshop2` com versionamento e bloqueio de acesso público para armazenamento dos arquivos de estado (`.tfstate`).
+- **State Backend Centralizado (S3):** Gerenciamento e garantia de existência do bucket `fiap-repairshop-{ACCOUNT_ID}` com versionamento e bloqueio de acesso público para armazenamento dos arquivos de estado (`.tfstate`).
 
 ---
 
@@ -93,7 +93,7 @@ flowchart TB
 
     subgraph GlobalAWS["☁️ Serviços Centrais de Suporte (AWS Management)"]
         ECR["📦 AWS ECR (Container Registry)\nrepairshop-* (Scan on Push)"]
-        S3Bucket["🪣 AWS S3 Remote State Bucket\nfiap-repairshop2 (SSE-AES256 / Versioned)"]
+        S3Bucket["🪣 AWS S3 Remote State Bucket\nfiap-repairshop-{ACCOUNT_ID} (SSE-AES256 / Versioned)"]
     end
     class GlobalAWS serviceStyle
     class ECR,S3Bucket serviceStyle
@@ -150,7 +150,7 @@ flowchart TD
 
     A["🎯 Disparo / Trigger\n• Push ou PR (main, homolog, dev)\n• Workflow Dispatch Manual"]:::triggerStyle
     A --> B["⚙️ Autenticação AWS\n(Configure AWS Credentials / IAM LabRole)"]:::stepStyle
-    B --> C["📦 Garantia do Bucket S3\n(Verifica/Cria fiap-repairshop2 com SSE-AES256)"]:::stepStyle
+    B --> C["📦 Garantia do Bucket S3\n(Verifica/Cria fiap-repairshop-{ACCOUNT_ID} com SSE-AES256)"]:::stepStyle
     C --> D["🔍 Checagem de Formatação\n(terraform fmt -check na pasta infra/)"]:::stepStyle
     D --> E["⚡ Inicialização do Terraform\n(terraform init com backend S3 network/${ENV}.tfstate)"]:::stepStyle
     E --> F["📝 Geração do Plano\n(terraform plan -var-file=environments/${ENV}.tfvars)"]:::stepStyle
@@ -169,7 +169,7 @@ flowchart TD
 | :--- | :--- | :--- |
 | **1. Checkout repository** | Baixa o código-fonte no runner. | Garante que os arquivos Terraform da revisão exata estejam presentes para execução. |
 | **2. Configure AWS Credentials** | Autentica via IAM Secrets/Session Token (`LabRole`). | Estabelece sessão segura com a AWS com permissões de menor privilégio. |
-| **3. Ensure S3 Bucket State** | Verifica/Cria o bucket S3 `fiap-repairshop2` com versionamento e criptografia. | Garante a existência prévia do repositório central de estados sem falhas na primeira execução. |
+| **3. Ensure S3 Bucket State** | Verifica/Cria o bucket S3 `fiap-repairshop-{ACCOUNT_ID}` com versionamento e criptografia. | Garante a existência prévia do repositório central de estados sem falhas na primeira execução. |
 | **4. Setup Terraform** | Instala a versão pinada do binário (Terraform `1.8.5`). | Previne divergências de comportamento e breaking changes entre versões da CLI. |
 | **5. Terraform Format Check** | Executa `terraform fmt -check` na pasta `infra/`. | Assegura a conformidade com o padrão canônico de estilo de código HCL. |
 | **6. Terraform Init** | Inicializa plugins e conecta o backend remoto S3 (`network/${ENV}.tfstate`). | Isola o arquivo de estado deste repositório dos demais componentes da arquitetura. |
@@ -210,7 +210,7 @@ Para que a pipeline de CI/CD execute o provisionamento da rede VPC, Subnets, Gat
 | Variável / Parâmetro | Origem / Localização | Valor Padrão | Descrição |
 | :--- | :--- | :--- | :--- |
 | `AWS_REGION` | Pipeline `env` / Terraform | `us-east-1` | Região da AWS para deploy da rede e repositórios ECR. |
-| `S3_TFSTATE_BUCKET` | Backend S3 / Workflow | `fiap-repairshop2` | Bucket S3 para armazenamento do estado `network/${ENV}.tfstate`. |
+| `S3_TFSTATE_BUCKET` | Backend S3 / Workflow | `fiap-repairshop-{ACCOUNT_ID}` | Bucket S3 para armazenamento do estado `network/${ENV}.tfstate`. |
 | `VPC_CIDR` | `environments/*.tfvars` | `10.0.0.0/16` | Bloco CIDR principal atribuído à VPC da aplicação. |
 | `CLUSTER_NAME` | `environments/*.tfvars` | `repairshop-eks` | Prefixo identificador para nomenclatura e tagging dos recursos de rede. |
 
@@ -253,7 +253,7 @@ cd infra
 
 # 2. Inicialize o backend remoto S3 para o ambiente desejado (ex: dev)
 terraform init \
-  -backend-config="bucket=fiap-repairshop2" \
+  -backend-config="bucket=fiap-repairshop-{ACCOUNT_ID}" \
   -backend-config="key=network/dev.tfstate" \
   -backend-config="region=us-east-1"
 
